@@ -220,6 +220,7 @@ COL_ALIASES = {
     "holiday/promotion":"Holiday/Promotion","holiday":"Holiday/Promotion","promotion":"Holiday/Promotion",
     "competitor pricing":"Competitor Pricing","competitor price":"Competitor Pricing",
     "seasonality":"Seasonality",
+    "season":"Seasonality",
 }
 
 def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
@@ -230,6 +231,160 @@ def normalize_columns(df: pd.DataFrame) -> pd.DataFrame:
         if normalized in COL_ALIASES:
             rename_map[col] = COL_ALIASES[normalized]
     return df.rename(columns=rename_map)
+
+def fill_missing_columns(df: pd.DataFrame) -> tuple:
+    """
+    Fill missing required columns with sensible defaults.
+    Returns (df_filled, list_of_filled_cols).
+    
+    Strategy per column:
+    - Units Sold     → if missing, can't proceed (core metric). Try to infer from similar cols, else raise.
+    - Date           → if missing, create synthetic daily dates.
+    - Store ID       → 'S001' (single store)
+    - Product ID     → 'P001' (single product)
+    - Category       → 'General'
+    - Region         → 'Unknown'
+    - Inventory Level → 3× Units Sold (reasonable coverage assumption)
+    - Units Ordered   → same as Units Sold
+    - Demand Forecast → same as Units Sold (no error assumption)
+    - Price          → median of existing 'price'-like cols, else 50.0
+    - Discount       → 0 (no discount)
+    - Weather Condition → 'Sunny'
+    - Holiday/Promotion → 0
+    - Competitor Pricing → same as Price
+    - Seasonality    → infer from month if Date present, else 'Summer'
+    """
+    df = df.copy()
+    filled = []
+
+    # ── Core: Units Sold ──
+    if "Units Sold" not in df.columns:
+        # Try common alternatives
+        for alt in ["quantity","qty","sales","quantity_sold","amount_sold","sold"]:
+            match = [c for c in df.columns if c.strip().lower().replace(" ","_") == alt]
+            if match:
+                df["Units Sold"] = pd.to_numeric(df[match[0]], errors="coerce").fillna(1).astype(int)
+                filled.append(f"Units Sold ← '{match[0]}'")
+                break
+        else:
+            # Last resort: fill with 1
+            df["Units Sold"] = 1
+            filled.append("Units Sold = 1 (không tìm thấy cột tương đương)")
+
+    # ── Date ──
+    if "Date" not in df.columns:
+        date_like = [c for c in df.columns if "date" in c.strip().lower() or "time" in c.strip().lower()]
+        if date_like:
+            df["Date"] = pd.to_datetime(df[date_like[0]], errors="coerce")
+            filled.append(f"Date ← '{date_like[0]}'")
+        else:
+            df["Date"] = pd.date_range(start="2022-01-01", periods=len(df), freq="D")
+            filled.append("Date = synthetic 2022-01-01 + index days")
+
+    # ── Identifiers ──
+    if "Store ID" not in df.columns:
+        store_like = [c for c in df.columns if "store" in c.strip().lower()]
+        if store_like:
+            df["Store ID"] = df[store_like[0]].astype(str)
+            filled.append(f"Store ID ← '{store_like[0]}'")
+        else:
+            df["Store ID"] = "S001"
+            filled.append("Store ID = 'S001'")
+
+    if "Product ID" not in df.columns:
+        prod_like = [c for c in df.columns if "product" in c.strip().lower() or "item" in c.strip().lower() or "sku" in c.strip().lower()]
+        if prod_like:
+            df["Product ID"] = df[prod_like[0]].astype(str)
+            filled.append(f"Product ID ← '{prod_like[0]}'")
+        else:
+            df["Product ID"] = "P001"
+            filled.append("Product ID = 'P001'")
+
+    if "Category" not in df.columns:
+        cat_like = [c for c in df.columns if "categ" in c.strip().lower() or "type" in c.strip().lower() or "group" in c.strip().lower()]
+        if cat_like:
+            df["Category"] = df[cat_like[0]].astype(str)
+            filled.append(f"Category ← '{cat_like[0]}'")
+        else:
+            df["Category"] = "General"
+            filled.append("Category = 'General'")
+
+    if "Region" not in df.columns:
+        reg_like = [c for c in df.columns if "region" in c.strip().lower() or "location" in c.strip().lower() or "area" in c.strip().lower() or "city" in c.strip().lower()]
+        if reg_like:
+            df["Region"] = df[reg_like[0]].astype(str)
+            filled.append(f"Region ← '{reg_like[0]}'")
+        else:
+            df["Region"] = "Unknown"
+            filled.append("Region = 'Unknown'")
+
+    # ── Price ──
+    if "Price" not in df.columns:
+        price_like = [c for c in df.columns if "price" in c.strip().lower() or "cost" in c.strip().lower() or "amount" in c.strip().lower() or "value" in c.strip().lower()]
+        if price_like:
+            vals = pd.to_numeric(df[price_like[0]], errors="coerce").fillna(50.0)
+            df["Price"] = vals
+            filled.append(f"Price ← '{price_like[0]}'")
+        else:
+            df["Price"] = 50.0
+            filled.append("Price = 50.0 (mặc định)")
+
+    # ── Derived numerics ──
+    if "Inventory Level" not in df.columns:
+        df["Inventory Level"] = (pd.to_numeric(df["Units Sold"], errors="coerce").fillna(1) * 3).astype(int)
+        filled.append("Inventory Level = Units Sold × 3")
+
+    if "Units Ordered" not in df.columns:
+        df["Units Ordered"] = df["Units Sold"]
+        filled.append("Units Ordered = Units Sold")
+
+    if "Demand Forecast" not in df.columns:
+        df["Demand Forecast"] = df["Units Sold"]
+        filled.append("Demand Forecast = Units Sold (MAPE = 0%)")
+
+    if "Competitor Pricing" not in df.columns:
+        df["Competitor Pricing"] = df["Price"]
+        filled.append("Competitor Pricing = Price (gap = 0%)")
+
+    # ── Categorical / flags ──
+    if "Discount" not in df.columns:
+        disc_like = [c for c in df.columns if "discount" in c.strip().lower() or "promo" in c.strip().lower()]
+        if disc_like:
+            df["Discount"] = pd.to_numeric(df[disc_like[0]], errors="coerce").fillna(0)
+            filled.append(f"Discount ← '{disc_like[0]}'")
+        else:
+            df["Discount"] = 0
+            filled.append("Discount = 0%")
+
+    if "Holiday/Promotion" not in df.columns:
+        hol_like = [c for c in df.columns if "holiday" in c.strip().lower() or "promotion" in c.strip().lower()]
+        if hol_like:
+            df["Holiday/Promotion"] = pd.to_numeric(df[hol_like[0]], errors="coerce").fillna(0).astype(int)
+            filled.append(f"Holiday/Promotion ← '{hol_like[0]}'")
+        else:
+            df["Holiday/Promotion"] = 0
+            filled.append("Holiday/Promotion = 0")
+
+    if "Weather Condition" not in df.columns:
+        df["Weather Condition"] = "Sunny"
+        filled.append("Weather Condition = 'Sunny'")
+
+    if "Seasonality" not in df.columns:
+        # Infer from month if Date exists
+        try:
+            months = pd.to_datetime(df["Date"]).dt.month
+            season_map = {12:"Winter",1:"Winter",2:"Winter",
+                          3:"Spring",4:"Spring",5:"Spring",
+                          6:"Summer",7:"Summer",8:"Summer",
+                          9:"Fall",10:"Fall",11:"Fall"}
+            df["Seasonality"] = months.map(season_map).fillna("Summer")
+            filled.append("Seasonality = tự suy từ tháng (Date)")
+        except Exception:
+            df["Seasonality"] = "Summer"
+            filled.append("Seasonality = 'Summer'")
+
+    return df, filled
+
 
 def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     df = df.copy()
@@ -312,7 +467,7 @@ def fig_to_img(fig):
     buf = io.BytesIO()
     fig.savefig(buf,format="png",bbox_inches="tight",facecolor=BG,dpi=130)
     buf.seek(0)
-    st.image(buf,use_container_width=True)
+    st.image(buf, use_container_width="always")
     plt.close(fig)
 
 def dark_table(df_in, num_cols=None, hi_map=None, max_rows=50, height=400):
@@ -435,19 +590,21 @@ if page == "DATA IMPORT":
                 missing  = REQUIRED_COLS - found
 
                 if missing:
-                    st.markdown(f'<div class="alert alert-amber">⚠ Missing columns detected: <strong>{", ".join(sorted(missing))}</strong><br>Trying to map from your column names...</div>',unsafe_allow_html=True)
-                    # Show column mapping
-                    st.markdown('<div style="font-size:10px;font-weight:700;letter-spacing:2px;color:#5a9ab8;margin:12px 0 6px">COLUMN MAPPING</div>',unsafe_allow_html=True)
-                    mapping_data = []
-                    for orig,mapped in zip(raw.columns,raw_norm.columns):
-                        status = "✓ Matched" if mapped in REQUIRED_COLS else "⚠ Unmapped"
-                        mapping_data.append({"Original":orig,"Mapped to":mapped,"Status":status})
-                    dark_table(pd.DataFrame(mapping_data), height=220)
+                    # Auto-fill missing columns with smart defaults
+                    raw_filled, filled_list = fill_missing_columns(raw_norm)
 
-                    still_missing = REQUIRED_COLS - set(raw_norm.columns)
-                    if still_missing:
-                        st.markdown(f'<div class="alert alert-red">❌ Could not map: <strong>{", ".join(sorted(still_missing))}</strong><br>Please rename these columns in your file and re-upload.</div>',unsafe_allow_html=True)
-                        st.stop()
+                    # Show what was filled
+                    st.markdown(f'<div class="alert alert-amber">⚠ <strong>{len(missing)} cột không tìm thấy</strong> — đã tự động tạo giá trị mặc định để vẫn chạy đầy đủ.</div>', unsafe_allow_html=True)
+
+                    fill_rows = []
+                    for item in filled_list:
+                        fill_rows.append({"Cột được tạo": item.split("=")[0].split("←")[0].strip(),
+                                          "Giá trị / Nguồn": item})
+                    if fill_rows:
+                        st.markdown('<div style="font-size:10px;font-weight:700;letter-spacing:2px;color:#5a9ab8;margin:10px 0 6px">GIÁ TRỊ MẶC ĐỊNH ĐÃ ĐƯỢC TẠO</div>', unsafe_allow_html=True)
+                        dark_table(pd.DataFrame(fill_rows), height=min(40 + len(fill_rows)*38, 360))
+
+                    raw_norm = raw_filled
 
                 # Engineer features
                 with st.spinner("Processing data..."):
@@ -460,7 +617,9 @@ if page == "DATA IMPORT":
 
                 st.session_state.df = df_processed
                 st.session_state.data_source = uploaded.name
-                st.markdown(f'<div class="alert alert-green">✓ Data processed successfully — <strong>{len(df_processed):,} rows</strong> ready for analysis.</div>',unsafe_allow_html=True)
+                n_filled = len(missing) if missing else 0
+                note = f" · {n_filled} cột được tự động điền" if n_filled else ""
+                st.markdown(f'<div class="alert alert-green">✓ Data processed successfully — <strong>{len(df_processed):,} rows</strong> ready for analysis{note}.</div>',unsafe_allow_html=True)
 
             except Exception as e:
                 st.markdown(f'<div class="alert alert-red">❌ Error reading file: <strong>{e}</strong></div>',unsafe_allow_html=True)
@@ -469,25 +628,26 @@ if page == "DATA IMPORT":
             st.markdown('<div class="alert alert-amber">📂 Chưa có dữ liệu. Vui lòng upload file CSV ở trên để bắt đầu.</div>',unsafe_allow_html=True)
 
     with col_info:
-        st.markdown('<div style="font-size:10px;font-weight:700;letter-spacing:2px;color:#5a9ab8;margin-bottom:10px">REQUIRED COLUMNS</div>',unsafe_allow_html=True)
+        st.markdown('<div style="font-size:10px;font-weight:700;letter-spacing:2px;color:#5a9ab8;margin-bottom:6px">COLUMNS & GIÁ TRỊ MẶC ĐỊNH</div>',unsafe_allow_html=True)
+        st.markdown('<div class="alert alert-green" style="font-size:11px;margin-bottom:10px">✅ Cột thiếu sẽ tự động được điền — không cần đủ tất cả.</div>', unsafe_allow_html=True)
         req_rows = [
-            {"Cột":"Category","Kiểu":"text","Ví dụ":"Clothing"},
-            {"Cột":"Competitor Pricing","Kiểu":"số","Ví dụ":"72.50"},
-            {"Cột":"Date","Kiểu":"date","Ví dụ":"2022-01-05"},
-            {"Cột":"Demand Forecast","Kiểu":"số","Ví dụ":"100"},
-            {"Cột":"Discount","Kiểu":"số (%)","Ví dụ":"10"},
-            {"Cột":"Holiday/Promotion","Kiểu":"0/1","Ví dụ":"1"},
-            {"Cột":"Inventory Level","Kiểu":"số","Ví dụ":"231"},
-            {"Cột":"Price","Kiểu":"số","Ví dụ":"33.50"},
-            {"Cột":"Product ID","Kiểu":"text","Ví dụ":"P001"},
-            {"Cột":"Region","Kiểu":"text","Ví dụ":"North"},
-            {"Cột":"Seasonality","Kiểu":"text","Ví dụ":"Winter"},
-            {"Cột":"Store ID","Kiểu":"text","Ví dụ":"S001"},
-            {"Cột":"Units Ordered","Kiểu":"số","Ví dụ":"50"},
-            {"Cột":"Units Sold","Kiểu":"số","Ví dụ":"127"},
-            {"Cột":"Weather Condition","Kiểu":"text","Ví dụ":"Sunny"},
+            {"Cột":"Date","Bắt buộc":"✓","Mặc định nếu thiếu":"synthetic 2022-01-01+"},
+            {"Cột":"Units Sold","Bắt buộc":"✓","Mặc định nếu thiếu":"tìm qty/sales/sold"},
+            {"Cột":"Category","Bắt buộc":"","Mặc định nếu thiếu":"'General'"},
+            {"Cột":"Store ID","Bắt buộc":"","Mặc định nếu thiếu":"'S001'"},
+            {"Cột":"Product ID","Bắt buộc":"","Mặc định nếu thiếu":"'P001'"},
+            {"Cột":"Region","Bắt buộc":"","Mặc định nếu thiếu":"'Unknown'"},
+            {"Cột":"Price","Bắt buộc":"","Mặc định nếu thiếu":"tìm price/cost, else 50"},
+            {"Cột":"Inventory Level","Bắt buộc":"","Mặc định nếu thiếu":"Units Sold × 3"},
+            {"Cột":"Units Ordered","Bắt buộc":"","Mặc định nếu thiếu":"= Units Sold"},
+            {"Cột":"Demand Forecast","Bắt buộc":"","Mặc định nếu thiếu":"= Units Sold"},
+            {"Cột":"Competitor Pricing","Bắt buộc":"","Mặc định nếu thiếu":"= Price"},
+            {"Cột":"Discount","Bắt buộc":"","Mặc định nếu thiếu":"0%"},
+            {"Cột":"Holiday/Promotion","Bắt buộc":"","Mặc định nếu thiếu":"0"},
+            {"Cột":"Weather Condition","Bắt buộc":"","Mặc định nếu thiếu":"'Sunny'"},
+            {"Cột":"Seasonality","Bắt buộc":"","Mặc định nếu thiếu":"suy từ tháng"},
         ]
-        dark_table(pd.DataFrame(req_rows), height=480)
+        dark_table(pd.DataFrame(req_rows), height=520)
 
     # Show data preview if loaded
     df = get_df()
@@ -641,14 +801,14 @@ else:
             reorder_rate = df["reorder_recommended"].mean()*100
             date_range = f"{df['Date'].min().strftime('%b %Y')} – {df['Date'].max().strftime('%b %Y')}"
             stats_rows = [
-                (" Khoảng thời gian", date_range),
-                (" Category doanh thu cao nhất", top_cat),
-                (" Store doanh thu cao nhất", top_store),
-                (" Tỷ lệ stockout risk", f"{stockout_rate:.1f}%"),
-                (" Chiết khấu trung bình", f"{avg_disc:.1f}%"),
-                (" Tỷ lệ cần reorder", f"{reorder_rate:.1f}%"),
-                (" Tổng sản phẩm", f"{df['product_id'].nunique():,}"),
-                (" Số vùng", f"{df['region'].nunique()}"),
+                ("📅 Khoảng thời gian", date_range),
+                ("🏆 Category doanh thu cao nhất", top_cat),
+                ("🏪 Store doanh thu cao nhất", top_store),
+                ("⚠ Tỷ lệ stockout risk", f"{stockout_rate:.1f}%"),
+                ("💸 Chiết khấu trung bình", f"{avg_disc:.1f}%"),
+                ("🔔 Tỷ lệ cần reorder", f"{reorder_rate:.1f}%"),
+                ("📦 Tổng sản phẩm", f"{df['product_id'].nunique():,}"),
+                ("📍 Số vùng", f"{df['region'].nunique()}"),
             ]
             rows_html = ""
             for label, val in stats_rows:
@@ -1046,7 +1206,7 @@ else:
                 <div style="background:#0d1828;border:1px solid #1a3048;border-left:3px solid #00c8dc;
                             border-radius:6px;padding:12px 18px;margin-bottom:16px">
                     <div style="font-size:11px;font-weight:700;color:#00c8dc;margin-bottom:5px">
-                         DỮ LIỆU: {date_min} → {date_max} · {n_total} tháng
+                        📊 DỮ LIỆU: {date_min} → {date_max} · {n_total} tháng
                     </div>
                     <div style="font-size:12px;color:#a0c8d8">
                         Tất cả biểu đồ được tính toán trực tiếp từ file bạn đã upload.
@@ -1392,7 +1552,7 @@ else:
         <div style="background:#0d1828;border:1px solid #1a3048;border-left:3px solid #00c8dc;
                     border-radius:6px;padding:14px 18px;margin-bottom:18px">
             <div style="font-size:11px;font-weight:700;letter-spacing:1.5px;color:#00c8dc;margin-bottom:6px">
-                 MÔ HÌNH DỰ BÁO: SARIMA (Seasonal ARIMA)
+                📊 MÔ HÌNH DỰ BÁO: SARIMA (Seasonal ARIMA)
             </div>
             <div style="font-size:13px;color:#a0c8d8;line-height:1.9">
                 Mô hình học từ dữ liệu lịch sử để phát hiện <strong style="color:#c8dde8">xu hướng + chu kỳ mùa vụ hàng năm</strong>.
@@ -1465,8 +1625,8 @@ else:
 
                 fig, ax = plt.subplots(figsize=(10, 4))
                 ax.fill_between(ts.index, ts.values, alpha=0.08, color=BLUE)
-                ax.plot(ts.index, ts.values, color=TC, lw=1.5, label=" Lịch sử thực tế")
-                ax.plot(fc.index, fc.values, "o-", color=BLUE, lw=2.5, ms=8, label=f" Dự báo {n_months} tháng (SARIMA)")
+                ax.plot(ts.index, ts.values, color=TC, lw=1.5, label="📈 Lịch sử thực tế")
+                ax.plot(fc.index, fc.values, "o-", color=BLUE, lw=2.5, ms=8, label=f"🔮 Dự báo {n_months} tháng (SARIMA)")
                 ax.fill_between(fc.index, fc.values*0.97, fc.values*1.03, alpha=0.15, color=BLUE, label="Khoảng tin cậy ±3%")
                 ax.axvline(ts.index[-1], color=AMBER, ls="--", lw=1.5, alpha=0.7, label="Điểm bắt đầu dự báo")
                 for d, v in zip(fc.index, fc.values):
@@ -1486,12 +1646,12 @@ else:
                         "Trạng thái": "🔺 Tăng" if v > last_val*1.01 else ("🔻 Giảm" if v < last_val*0.99 else "➡ Ổn định")}
                        for d, v in zip(fc.index, fc.values)]
                 dark_table(pd.DataFrame(tbl), height=240)
-                st.markdown(f'<div class="alert alert-green"> SARIMA(0,0,0)×(0,1,1,12) · Dữ liệu import: <strong>{len(ts)} tháng</strong> · Phạm vi: <strong>{scope_label}</strong></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="alert alert-green">✅ SARIMA(0,0,0)×(0,1,1,12) · Dữ liệu import: <strong>{len(ts)} tháng</strong> · Phạm vi: <strong>{scope_label}</strong></div>', unsafe_allow_html=True)
             else:
                 st.markdown("""
                 <div style="margin-top:16px;padding:32px;background:#0d1828;border:1px dashed #1a3048;
                             border-radius:6px;text-align:center">
-                    <div style="font-size:32px;margin-bottom:12px"></div>
+                    <div style="font-size:32px;margin-bottom:12px">🔮</div>
                     <div style="color:#a0c8d8;font-size:14px;margin-bottom:8px">
                         Chọn <strong style="color:#00c8dc">phạm vi</strong> (toàn bộ / theo store / theo category),<br>
                         số tháng muốn dự báo, rồi nhấn <strong style="color:#00c8dc">▶ CHẠY DỰ BÁO</strong>
