@@ -622,7 +622,7 @@ if page == "DATA IMPORT":
                 st.markdown(f'<div class="alert alert-green">✓ Data processed successfully — <strong>{len(df_processed):,} rows</strong> ready for analysis{note}.</div>',unsafe_allow_html=True)
 
             except Exception as e:
-                st.markdown(f'<div class="alert alert-red">❌ Error reading file: <strong>{e}</strong></div>',unsafe_allow_html=True)
+                st.markdown(f'<div class="alert alert-red"> Error reading file: <strong>{e}</strong></div>',unsafe_allow_html=True)
 
         else:
             st.markdown('<div class="alert alert-amber">📂 Chưa có dữ liệu. Vui lòng upload file CSV ở trên để bắt đầu.</div>',unsafe_allow_html=True)
@@ -801,14 +801,14 @@ else:
             reorder_rate = df["reorder_recommended"].mean()*100
             date_range = f"{df['Date'].min().strftime('%b %Y')} – {df['Date'].max().strftime('%b %Y')}"
             stats_rows = [
-                ("📅 Khoảng thời gian", date_range),
-                ("🏆 Category doanh thu cao nhất", top_cat),
-                ("🏪 Store doanh thu cao nhất", top_store),
-                ("⚠ Tỷ lệ stockout risk", f"{stockout_rate:.1f}%"),
-                ("💸 Chiết khấu trung bình", f"{avg_disc:.1f}%"),
-                ("🔔 Tỷ lệ cần reorder", f"{reorder_rate:.1f}%"),
-                ("📦 Tổng sản phẩm", f"{df['product_id'].nunique():,}"),
-                ("📍 Số vùng", f"{df['region'].nunique()}"),
+                (" Khoảng thời gian", date_range),
+                (" Category doanh thu cao nhất", top_cat),
+                (" Store doanh thu cao nhất", top_store),
+                (" Tỷ lệ stockout risk", f"{stockout_rate:.1f}%"),
+                (" Chiết khấu trung bình", f"{avg_disc:.1f}%"),
+                (" Tỷ lệ cần reorder", f"{reorder_rate:.1f}%"),
+                (" Tổng sản phẩm", f"{df['product_id'].nunique():,}"),
+                (" Số vùng", f"{df['region'].nunique()}"),
             ]
             rows_html = ""
             for label, val in stats_rows:
@@ -1552,7 +1552,7 @@ else:
         <div style="background:#0d1828;border:1px solid #1a3048;border-left:3px solid #00c8dc;
                     border-radius:6px;padding:14px 18px;margin-bottom:18px">
             <div style="font-size:11px;font-weight:700;letter-spacing:1.5px;color:#00c8dc;margin-bottom:6px">
-                📊 MÔ HÌNH DỰ BÁO: SARIMA (Seasonal ARIMA)
+                 MÔ HÌNH DỰ BÁO: SARIMA (Seasonal ARIMA)
             </div>
             <div style="font-size:13px;color:#a0c8d8;line-height:1.9">
                 Mô hình học từ dữ liệu lịch sử để phát hiện <strong style="color:#c8dde8">xu hướng + chu kỳ mùa vụ hàng năm</strong>.
@@ -1625,8 +1625,8 @@ else:
 
                 fig, ax = plt.subplots(figsize=(10, 4))
                 ax.fill_between(ts.index, ts.values, alpha=0.08, color=BLUE)
-                ax.plot(ts.index, ts.values, color=TC, lw=1.5, label="📈 Lịch sử thực tế")
-                ax.plot(fc.index, fc.values, "o-", color=BLUE, lw=2.5, ms=8, label=f"🔮 Dự báo {n_months} tháng (SARIMA)")
+                ax.plot(ts.index, ts.values, color=TC, lw=1.5, label=" Lịch sử thực tế")
+                ax.plot(fc.index, fc.values, "o-", color=BLUE, lw=2.5, ms=8, label=f" Dự báo {n_months} tháng (SARIMA)")
                 ax.fill_between(fc.index, fc.values*0.97, fc.values*1.03, alpha=0.15, color=BLUE, label="Khoảng tin cậy ±3%")
                 ax.axvline(ts.index[-1], color=AMBER, ls="--", lw=1.5, alpha=0.7, label="Điểm bắt đầu dự báo")
                 for d, v in zip(fc.index, fc.values):
@@ -1646,12 +1646,12 @@ else:
                         "Trạng thái": "🔺 Tăng" if v > last_val*1.01 else ("🔻 Giảm" if v < last_val*0.99 else "➡ Ổn định")}
                        for d, v in zip(fc.index, fc.values)]
                 dark_table(pd.DataFrame(tbl), height=240)
-                st.markdown(f'<div class="alert alert-green">✅ SARIMA(0,0,0)×(0,1,1,12) · Dữ liệu import: <strong>{len(ts)} tháng</strong> · Phạm vi: <strong>{scope_label}</strong></div>', unsafe_allow_html=True)
+                st.markdown(f'<div class="alert alert-green"> SARIMA(0,0,0)×(0,1,1,12) · Dữ liệu import: <strong>{len(ts)} tháng</strong> · Phạm vi: <strong>{scope_label}</strong></div>', unsafe_allow_html=True)
             else:
                 st.markdown("""
                 <div style="margin-top:16px;padding:32px;background:#0d1828;border:1px dashed #1a3048;
                             border-radius:6px;text-align:center">
-                    <div style="font-size:32px;margin-bottom:12px">🔮</div>
+                    <div style="font-size:32px;margin-bottom:12px"></div>
                     <div style="color:#a0c8d8;font-size:14px;margin-bottom:8px">
                         Chọn <strong style="color:#00c8dc">phạm vi</strong> (toàn bộ / theo store / theo category),<br>
                         số tháng muốn dự báo, rồi nhấn <strong style="color:#00c8dc">▶ CHẠY DỰ BÁO</strong>
