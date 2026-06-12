@@ -1,0 +1,45 @@
+=======================================================
+  DATA QUALITY REPORT – retail_store_inventory.csv
+=======================================================
+
+[1] Shape      : 73,100 rows × 15 cols
+[2] Duplicates : 0 rows
+
+[3] Missing values:
+    Date                      ✓ OK
+    Store ID                  ✓ OK
+    Product ID                ✓ OK
+    Category                  ✓ OK
+    Region                    ✓ OK
+    Inventory Level           ✓ OK
+    Units Sold                ✓ OK
+    Units Ordered             ✓ OK
+    Demand Forecast           ✓ OK
+    Price                     ✓ OK
+    Discount                  ✓ OK
+    Weather Condition         ✓ OK
+    Holiday/Promotion         ✓ OK
+    Competitor Pricing        ✓ OK
+    Seasonality               ✓ OK
+
+[4] Outliers (IQR):
+    Inventory Level               0 rows (0.00%)
+    Units Sold                  715 rows (0.98%)
+    Units Ordered                 0 rows (0.00%)
+    Demand Forecast             732 rows (1.00%)
+    Price                         0 rows (0.00%)
+    Discount                      0 rows (0.00%)
+    Holiday/Promotion             0 rows (0.00%)
+    Competitor Pricing            0 rows (0.00%)
+
+[5] Logical checks:
+    Units Sold > Inventory Level : 0 rows
+    Negative Units Sold          : 0 rows
+    Discount values              : [0, 5, 10, 15, 20]
+
+[6] Seasonality column:
+    ⚠ All 4 seasons appear in every calendar month (synthetic data)
+    → Will engineer 'calendar_season' from Date for modeling
+
+[7] Overall data quality: GOOD – minimal cleaning needed
+=======================================================

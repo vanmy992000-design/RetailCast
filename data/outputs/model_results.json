@@ -1,0 +1,34 @@
+{
+  "best_model": "SARIMA",
+  "evaluation": {
+    "SARIMA": {
+      "mae": 3179.33,
+      "rmse": 3930.91,
+      "mape": 0.7595,
+      "r2": -0.0092
+    },
+    "XGBoost": {
+      "mae": 6745.11,
+      "rmse": 7958.77,
+      "mape": 1.6152,
+      "r2": -3.1371
+    }
+  },
+  "future_forecast": {
+    "SARIMA": [
+      422796.0,
+      384568.0,
+      416060.0
+    ],
+    "XGBoost": [
+      412298.0,
+      402057.0,
+      417198.0
+    ]
+  },
+  "forecast_months": [
+    "Jan 2024",
+    "Feb 2024",
+    "Mar 2024"
+  ]
+}
